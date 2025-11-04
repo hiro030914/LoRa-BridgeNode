@@ -13,25 +13,53 @@ constexpr bool LORA_FIX_LENGTH_PAYLOAD_ON = false;        // 可変長ペイロ�
 constexpr bool LORA_IQ_INVERSION_ON = false;              // IQ反転OFF
 
 //constexpr int RX_TIMEOUT_VALUE = 1000;                  // 受信タイムアウト
-constexpr int BUFFER_SIZE = 64;                           // バッファサイズ
+//constexpr int BUFFER_SIZE = 10;                         // バッファサイズ
 constexpr int PACKET_QUEUE_SIZE = 50;                     // キューサイズ
 
-struct Packet {
-  uint8_t payload[BUFFER_SIZE];
+//エンコード・デコード
+constexpr byte HEADER = 0xAA                       // ヘッダ  // byte = unsigned char
+constexpr byte FOOTER = 0xA5                       // フッタ
+constexpr byte ESC = 0xDB                          // エスケープ開始
+constexpr byte ESCHEAD = 0xDE                      // HEADER代替
+constexpr byte ESCFOOT = 0xDC                      // FOOTER代替
+constexpr byte ESCESC = 0xDD                       // ESC代替
+
+byte calcChecksum(const void* data, size_t len) {
+    byte checksum = 0;
+    const byte* bytes = (const byte*)data;
+    for (int i = 0; i < len; i++){
+      checksum ^= bytes[i];
+    }
+    return checksum;
+  }
+
+struct SensorPacket{
   uint32_t node_id;
+  float temp_data;
+  float humi_data;
+};
+
+struct Packet {
+  SensorPacket paylaod;
   uint16_t size;
+  int16_t rssi;
+  int8_t snr;
 };
 
 Packet packet_queue[PACKET_QUEUE_SIZE];
 int packet_queue_head = 0;
 int packet_queue_tail = 0;
 
-bool enQueuePacket(uint8_t *payload, uint32_t node_id, uint16_t size) {
+static RadioEvents_t RadioEvents;
+bool lora_idle = true;
+
+bool enQueuePacket(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
   int next_tail = (packet_queue_tail + 1) % PACKET_QUEUE_SIZE;
-  if (next_tail == packet_queue_head) return false; // queue full
+  if (next_tail == packet_queue_head) return false; // キュー満杯
   memcpy(packet_queue[packet_queue_tail].payload, payload, size);
-  packet_queue[packet_queue_tail].node_id = node_id;
   packet_queue[packet_queue_tail].size = size;
+  packet_queue[packet_queue_tail].rssi = rssi;
+  packet_queue[packet_queue_tail].snr = snr;
   packet_queue_tail = next_tail;
   return true;
 }
@@ -43,10 +71,54 @@ bool deQueuePacket(Packet *packet) {
   return true;
 }
 
-static RadioEvents_t RadioEvents;
-bool lora_idle = true;
-uint64_t chipid = ESP.getEfuseMac();
-uint32_t node_id = (uint32_t)(chipid & 0xFFFFFFFF);
+// エンコードしてUARTに送信
+void sendPacketUART(Packet *packet) {
+
+  byte check = calcChecksum(packet, sizeof(*packet));
+
+  byte* sendData = (byte*)packet;
+
+  Serial2.write(HEADER);
+  for (int i = 0; i < sizeof(*packet); i++) {
+    byte Data = sendData[i];
+    
+    if (Data == HEADER) {
+      Serial2.write(ESC);
+      Serial2.write(ESCHEAD);
+    } else if (Data == FOOTER) {
+      Serial2.write(ESC);
+      Serial2.write(ESCFOOT);
+    } else if (Data == ESC) {
+      Serial2.write(ESC);
+      Serial2.write(ESCESC);
+    } else {
+      Serial2.write(Data);
+    }
+  } 
+    Serial2.write(check);
+    Serial2.write(FOOTER);
+
+    delay(1000);
+
+  /*unsigned char encoded[128];
+  size_t encoded_len = 0;
+
+  int ret = mbedtls_base64_encode(encoded, sizeof(encoded), &encoded_len,
+                                  packet->payload, packet->size);
+  if (ret != 0) {
+    Serial.println("Base64 encode failed!");
+    return;
+  }
+
+  // Node IDを16進文字列に変換
+  char node_id_str[12];
+  sprintf(node_id_str, "%08X", packet->node_id);
+  // UART送信フォーマット
+  Serial2.printf("RX:%s|%u|%s\n", node_id_str, packet->size, encoded);
+
+  Serial.printf("[Bridge] Sent via UART -> NodeID:%s | Size:%u | Encoded:%s\n",
+                node_id_str, packet->size, encoded);*/
+}
 
 void setup() {
   Serial.begin(115200);
@@ -85,26 +157,4 @@ void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
     Serial.println("⚠️ Queue full, packet dropped.");
   }
   lora_idle = true;
-}
-
-// Base64エンコードしてUARTに送信
-void sendPacketUART(Packet *packet) {
-  unsigned char encoded[128];
-  size_t encoded_len = 0;
-
-  int ret = mbedtls_base64_encode(encoded, sizeof(encoded), &encoded_len,
-                                  packet->payload, packet->size);
-  if (ret != 0) {
-    Serial.println("Base64 encode failed!");
-    return;
-  }
-
-  // Node IDを16進文字列に変換
-  char node_id_str[12];
-  sprintf(node_id_str, "%08X", packet->node_id);
-  // UART送信フォーマット
-  Serial2.printf("RX:%s|%u|%s\n", node_id_str, packet->size, encoded);
-
-  Serial.printf("[Bridge] Sent via UART -> NodeID:%s | Size:%u | Encoded:%s\n",
-                node_id_str, packet->size, encoded);
 }
