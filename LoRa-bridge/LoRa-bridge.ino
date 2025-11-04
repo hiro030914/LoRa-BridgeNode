@@ -2,19 +2,19 @@
 #include "Arduino.h"
 #include "mbedtls/base64.h"
 
-#define RF_FREQUENCY                925000000 // Hz
-#define TX_OUTPUT_POWER             14        // dBm
-#define LORA_BANDWIDTH              0         // 125 kHz
-#define LORA_SPREADING_FACTOR       7
-#define LORA_CODINGRATE             1         // 4/5
-#define LORA_PREAMBLE_LENGTH        8
-#define LORA_SYMBOL_TIMEOUT         0
-#define LORA_FIX_LENGTH_PAYLOAD_ON  false
-#define LORA_IQ_INVERSION_ON        false
+constexpr uint32_t RF_FREQUENCY = 925000000;              
+constexpr int TX_OUTPUT_POWER = 14;                       
+constexpr int LORA_BANDWIDTH = 0;                         
+constexpr int LORA_SPREADING_FACTOR = 7;                 
+constexpr int LORA_CODINGRATE = 1;                        
+constexpr int LORA_PREAMBLE_LENGTH = 8;                  
+constexpr int LORA_SYMBOL_TIMEOUT = 0;                    
+constexpr bool LORA_FIX_LENGTH_PAYLOAD_ON = false;        
+constexpr bool LORA_IQ_INVERSION_ON = false;              
 
-#define RX_TIMEOUT_VALUE            1000
-#define BUFFER_SIZE                 64
-#define PACKET_QUEUE_SIZE           10
+//constexpr int RX_TIMEOUT_VALUE = 1000;                  
+constexpr int BUFFER_SIZE = 64;                           
+constexpr int PACKET_QUEUE_SIZE = 50;                     
 
 struct Packet {
   uint8_t payload[BUFFER_SIZE];
@@ -50,7 +50,8 @@ uint32_t node_id = (uint32_t)(chipid & 0xFFFFFFFF);
 
 void setup() {
   Serial.begin(115200);
-  Serial2.begin(115200); // UART通信
+  //Serial1.begin(115200, SERIAL_8N1, 15, 14); 
+  Serial2.begin(115200, SERIAL_8N1, 47, 48); // UART通信
   Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
 
   RadioEvents.RxDone = OnRxDone;
@@ -101,7 +102,6 @@ void sendPacketUART(Packet *packet) {
   // Node IDを16進文字列に変換
   char node_id_str[12];
   sprintf(node_id_str, "%08X", packet->node_id);
-
   // UART送信フォーマット
   Serial2.printf("RX:%s|%u|%s\n", node_id_str, packet->size, encoded);
 
