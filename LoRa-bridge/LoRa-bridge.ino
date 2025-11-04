@@ -2,19 +2,19 @@
 #include "Arduino.h"
 #include "mbedtls/base64.h"
 
-constexpr uint32_t RF_FREQUENCY = 925000000;              
-constexpr int TX_OUTPUT_POWER = 14;                       
-constexpr int LORA_BANDWIDTH = 0;                         
-constexpr int LORA_SPREADING_FACTOR = 7;                 
-constexpr int LORA_CODINGRATE = 1;                        
-constexpr int LORA_PREAMBLE_LENGTH = 8;                  
-constexpr int LORA_SYMBOL_TIMEOUT = 0;                    
-constexpr bool LORA_FIX_LENGTH_PAYLOAD_ON = false;        
-constexpr bool LORA_IQ_INVERSION_ON = false;              
+constexpr uint32_t RF_FREQUENCY = 925000000;              // LoRa周波数(Hz)
+constexpr int TX_OUTPUT_POWER = 14;                       // 送信出力(dBm)
+constexpr int LORA_BANDWIDTH = 0;                         // 125kHz
+constexpr int LORA_SPREADING_FACTOR = 7;                  // SF7
+constexpr int LORA_CODINGRATE = 1;                        // CR4/5
+constexpr int LORA_PREAMBLE_LENGTH = 8;                   // プレアンブル長 // 同期確認
+constexpr int LORA_SYMBOL_TIMEOUT = 0;                    // シンボルタイムアウト
+constexpr bool LORA_FIX_LENGTH_PAYLOAD_ON = false;        // 可変長ペイロード
+constexpr bool LORA_IQ_INVERSION_ON = false;              // IQ反転OFF
 
-//constexpr int RX_TIMEOUT_VALUE = 1000;                  
-constexpr int BUFFER_SIZE = 64;                           
-constexpr int PACKET_QUEUE_SIZE = 50;                     
+//constexpr int RX_TIMEOUT_VALUE = 1000;                  // 受信タイムアウト
+constexpr int BUFFER_SIZE = 64;                           // バッファサイズ
+constexpr int PACKET_QUEUE_SIZE = 50;                     // キューサイズ
 
 struct Packet {
   uint8_t payload[BUFFER_SIZE];
