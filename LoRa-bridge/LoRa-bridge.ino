@@ -2,34 +2,37 @@
 #include "Arduino.h"
 #include "mbedtls/base64.h"
 
-#define RF_FREQUENCY                925000000 // Hz
-#define TX_OUTPUT_POWER             14        // dBm
-#define LORA_BANDWIDTH              0         // 125 kHz
-#define LORA_SPREADING_FACTOR       7
-#define LORA_CODINGRATE             1         // 4/5
-#define LORA_PREAMBLE_LENGTH        8
-#define LORA_SYMBOL_TIMEOUT         0
-#define LORA_FIX_LENGTH_PAYLOAD_ON  false
-#define LORA_IQ_INVERSION_ON        false
+// LoRaパラメータ設定
+// 固定パラメータのためconstexprによる定義
+constexpr uint32_t RF_FREQUENCY = 925000000;             // LoRa周波数(Hz)
+constexpr int8_t TX_OUTPUT_POWER = 14;                   // 送信出力(dBm)
+constexpr int LORA_BANDWIDTH = 0;                        // 125 kHz
+constexpr int LORA_SPREADING_FACTOR = 7;                 // SF7
+constexpr int LORA_CODINGRATE = 1;                       // CR4/5
+constexpr int LORA_PREAMBLE_LENGTH = 8;                  // プレアンブル長 //同期確認
+constexpr int LORA_SYMBOL_TIMEOUT = 0;                   // シンボルタイムアウト
+constexpr bool LORA_FIX_LENGTH_PAYLOAD_ON = false;       // 可変長ペイロード
+constexpr bool LORA_IQ_INVERSION_ON = false;             // IQ反転オフ
 
-#define RX_TIMEOUT_VALUE            1000
-#define BUFFER_SIZE                 64
-#define PACKET_QUEUE_SIZE           10
+constexpr uint32_t RX_TIMEOUT_VALUE = 1000;              // 受信タイムアウト(ms)
+constexpr uint16_t BUFFER_SIZE = 64;                     // バッファサイズ
+constexpr uint8_t PACKET_QUEUE_SIZE = 10;                // キューサイズ
 
-constexpr byte HEADER = 0xAA;
-
+// SensorPacket構造体は受信データと同じ型
+// ネスト構造でpayload変数をSensorPacket構造体で定義
+// プラグマによりパディング削除
 # pragma pack(1)
 struct SensorPacket {
-  uint32_t node_id;
-  float temp_data;
-  float humi_data;
+  uint32_t node_id;          // センサノード識別子
+  float temp_data;           // 温度データ
+  float humi_data;           // 湿度データ
 };
-
+// LoRaのイベントの引数と一致させる
 struct Packet {
-  uint16_t size;
-  SensorPacket payload;
-  int16_t rssi;
-  int8_t snr;
+  uint16_t size;             // 受信パケットサイズ
+  SensorPacket payload;      // 受信ペイロード
+  int16_t rssi;              // 信号強度
+  int8_t snr;                // sn比
 };
 #pragma pack()
 
