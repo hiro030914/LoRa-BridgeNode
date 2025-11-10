@@ -27,7 +27,7 @@ struct SensorPacket {
   float temp_data;           // 温度データ
   float humi_data;           // 湿度データ
 };
-// LoRaのイベントの引数と一致させる
+// LoRaのイベントの引数と一致
 struct Packet {
   uint16_t size;             // 受信パケットサイズ
   SensorPacket payload;      // 受信ペイロード
@@ -36,10 +36,20 @@ struct Packet {
 };
 #pragma pack()
 
-Packet packet_queue[PACKET_QUEUE_SIZE];
-int packet_queue_head = 0;
-int packet_queue_tail = 0;
+Packet packet_queue[PACKET_QUEUE_SIZE];      // 循環キュー
+int packet_queue_head = 0;                   // 先頭キュー
+int packet_queue_tail = 0;                   // 末尾キュー
 
+/**
+ * @brief 受信した各データをキュー配列に格納する関数
+ * @param payload 受信したデータ本体のポインタ
+ * @param size データサイズ
+ * @param rssi 信号強度
+ * @param snr sn比
+ * @return true キューへの追加が成功した時
+ * @return false キューが満杯になった時
+ * @details 末尾の変更は末尾キューのインデントをキューサイズで割った剰余にすることでキューを循環
+ */
 bool enQueuePacket(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
   int next_tail = (packet_queue_tail + 1) % PACKET_QUEUE_SIZE;
   if (next_tail == packet_queue_head) return false; // queue full
@@ -51,6 +61,13 @@ bool enQueuePacket(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
   return true;
 }
 
+/**
+ * @brief キューからパケットを取り出す関数
+ * @param packet キューから取り出すPacket構造体のアドレス 
+ * @return true キューからの取り出しが成功した時
+ * @return false キューが空になった時
+ * @details 先頭の変更は先頭キューのインデントをキューサイズで割った剰余にすることでキューを循環
+ */
 bool deQueuePacket(Packet *packet) {
   if (packet_queue_head == packet_queue_tail) return false; // empty
   memcpy(packet, &packet_queue[packet_queue_head], sizeof(Packet));
@@ -58,7 +75,16 @@ bool deQueuePacket(Packet *packet) {
   return true;
 }
 
-// UART送信
+/**
+ * @brief 受信した各データをキュー配列に格納する関数
+ * @param payload 受信したデータ本体
+ * @param size データサイズ
+ * @param rssi 信号強度
+ * @param snr sn比
+ * @return true キューへの追加が成功した時
+ * @return false キューが満杯になった時
+ * @details 末尾は末尾キューのインデントをキューサイズで割った剰余にすることでキューを循環
+ */
 void sendPacketUART(Packet *packet) {
   char Header = 'H';
   char Footer = 'F';
@@ -118,6 +144,16 @@ void loop() {
   }
 }
 
+/**
+ * @brief LoRaの受信用イベント
+ * @param payload 受信したデータ本体
+ * @param size データサイズ
+ * @param rssi 信号強度
+ * @param snr sn比
+ * @details if文でエンキュー関数の呼び出しを行い，受信した各データをエンキューする
+ * falseが返ってきた場合はキューが満杯であることを通知
+ * アイドル状態にする
+ */
 void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
   Radio.Sleep();
   if (!enQueuePacket(payload, size, rssi, snr)) {
