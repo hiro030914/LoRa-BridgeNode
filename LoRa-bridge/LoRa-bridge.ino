@@ -86,17 +86,17 @@ bool dequeuePacket(Packet *packet) {
  */
 void sendPacketUART(Packet *packet) {
   Serial2.write(&Header);
-  delay(200);
+  delay(1000);
   ssize_t n = Serial2.write((uint8_t *)&packet->payload, sizeof(SensorPacket));
   Serial.printf("send : %zd byte", n);
   Serial2.write(&Footer);
   Serial2.flush();
 
   // デバッグ用
-  Serial.printf("[Bridge] UART送信 : NodeID=%lu, Temp=%.2f, Humi=%.2f\n"
+  Serial.printf("[Bridge] UART送信 : NodeID=%lu, Temp=%.2f, Humi=%.2f\n",
                 packet->payload.node_id,
                 packet->payload.temp_data,
-                packet->payload.humi_data,
+                packet->payload.humi_data
                 );
 
   Serial.printf("[other] : RSSI=%d, SNR=%d\n",
