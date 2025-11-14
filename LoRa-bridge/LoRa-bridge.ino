@@ -16,22 +16,34 @@
 #define BUFFER_SIZE                 64
 #define PACKET_QUEUE_SIZE           10
 
-struct Packet {
-  uint8_t payload[BUFFER_SIZE];
+constexpr byte HEADER = 0xAA;
+
+# pragma pack(1)
+struct SensorPacket {
   uint32_t node_id;
-  uint16_t size;
+  float temp_data;
+  float humi_data;
 };
+
+struct Packet {
+  uint16_t size;
+  SensorPacket payload;
+  int16_t rssi;
+  int8_t snr;
+};
+#pragma pack()
 
 Packet packet_queue[PACKET_QUEUE_SIZE];
 int packet_queue_head = 0;
 int packet_queue_tail = 0;
 
-bool enQueuePacket(uint8_t *payload, uint32_t node_id, uint16_t size) {
+bool enQueuePacket(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
   int next_tail = (packet_queue_tail + 1) % PACKET_QUEUE_SIZE;
   if (next_tail == packet_queue_head) return false; // queue full
-  memcpy(packet_queue[packet_queue_tail].payload, payload, size);
-  packet_queue[packet_queue_tail].node_id = node_id;
   packet_queue[packet_queue_tail].size = size;
+  memcpy(&packet_queue[packet_queue_tail].payload, payload, size);
+  packet_queue[packet_queue_tail].rssi = rssi;
+  packet_queue[packet_queue_tail].snr = snr;
   packet_queue_tail = next_tail;
   return true;
 }
@@ -43,14 +55,39 @@ bool deQueuePacket(Packet *packet) {
   return true;
 }
 
+// UART送信
+void sendPacketUART(Packet *packet) {
+  char Header = 'H';
+  char Footer = 'F';
+  Serial2.write(&Header);
+  delay(1000);
+  ssize_t n = Serial2.write((uint8_t *)&packet->payload, sizeof(SensorPacket));
+  Serial.printf("send : %zd byte", n);
+  Serial2.write(&Footer);
+  Serial2.flush();
+
+  Serial.printf("[Bridge] UART送信: NodeID=%lu, Temp=%.2f, Humi=%.2f, RSSI=%d, SNR=%d\n",
+                packet->payload.node_id,
+                packet->payload.temp_data,
+                packet->payload.humi_data,
+                packet->rssi,
+                packet->snr);
+
+  uint8_t *p = (uint8_t *)&packet->payload ;
+  Serial.print("payload hex : ");
+  for (size_t i = 0; i < sizeof(SensorPacket); i++){
+    Serial.printf("%02X ", p[i]);
+  }
+  Serial.println();
+
+}
+
 static RadioEvents_t RadioEvents;
 bool lora_idle = true;
-uint64_t chipid = ESP.getEfuseMac();
-uint32_t node_id = (uint32_t)(chipid & 0xFFFFFFFF);
 
 void setup() {
   Serial.begin(115200);
-  Serial2.begin(115200); // UART通信
+  Serial2.begin(115200, SERIAL_8N1, 47, 48); // UART通信
   Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
 
   RadioEvents.RxDone = OnRxDone;
@@ -80,31 +117,8 @@ void loop() {
 
 void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
   Radio.Sleep();
-  if (!enQueuePacket(payload, node_id, size)) {
+  if (!enQueuePacket(payload, size, rssi, snr)) {
     Serial.println("⚠️ Queue full, packet dropped.");
   }
   lora_idle = true;
-}
-
-// Base64エンコードしてUARTに送信
-void sendPacketUART(Packet *packet) {
-  unsigned char encoded[128];
-  size_t encoded_len = 0;
-
-  int ret = mbedtls_base64_encode(encoded, sizeof(encoded), &encoded_len,
-                                  packet->payload, packet->size);
-  if (ret != 0) {
-    Serial.println("Base64 encode failed!");
-    return;
-  }
-
-  // Node IDを16進文字列に変換
-  char node_id_str[12];
-  sprintf(node_id_str, "%08X", packet->node_id);
-
-  // UART送信フォーマット
-  Serial2.printf("RX:%s|%u|%s\n", node_id_str, packet->size, encoded);
-
-  Serial.printf("[Bridge] Sent via UART -> NodeID:%s | Size:%u | Encoded:%s\n",
-                node_id_str, packet->size, encoded);
 }
