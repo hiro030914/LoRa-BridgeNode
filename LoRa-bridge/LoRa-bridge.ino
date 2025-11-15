@@ -21,20 +21,35 @@ constexpr uint8_t PACKET_QUEUE_SIZE = 10;                // キューサイズ
 constexpr char Header = 'H';                             // ヘッダ
 constexpr char Footer = 'F';                             // フッタ
 
-// SensorPacket構造体はセンサノードが送信するデータ型
+// デバッグ用
+int count = 0;
+uint32_t curr_seq = 0;
+uint32_t prev_seq = 0;
+uint32_t diff_seq;
+uint32_t failCount = 0;
+uint32_t successCount = 0;
+float successRate = 0.0f;
+uint32_t total = 0;
+
+// SensorPacket構造体はセンサノードが送信するデータ型(メタデータを除く)
+// RxPacket構造体はセンサノードが送信するデータ型
 // packet構造体はLoRaイベントの受信引数と一致する形式
 // pragma pack(1)により構造体のパディングを削除
 # pragma pack(1)
 struct SensorPacket {
-  uint32_t node_id;          // センサノード識別子
-  float temp_data;           // 温度データ
-  float humi_data;           // 湿度データ
+  uint32_t node_id;             // センサノード識別子
+  float temp_data;              // 温度データ
+  float humi_data;              // 湿度データ
+};
+struct RxPacket { 
+  uint32_t seq_no;              // 連番
+  SensorPacket Sensor_payload;  // 受信センサデータ
 };
 struct Packet {
-  uint16_t size;             // 受信パケットサイズ
-  SensorPacket payload;      // 受信ペイロード
-  int16_t rssi;              // 信号強度
-  int8_t snr;                // sn比
+  uint16_t size;                // 受信パケットサイズ
+  RxPacket payload;             // 受信ペイロード
+  int16_t rssi;                 // 信号強度
+  int8_t snr;                   // sn比
 };
 #pragma pack()
 
@@ -87,29 +102,57 @@ bool dequeuePacket(Packet *packet) {
 void sendPacketUART(Packet *packet) {
   Serial2.write(&Header);
   delay(1000);
-  ssize_t n = Serial2.write((uint8_t *)&packet->payload, sizeof(SensorPacket));
+  ssize_t n = Serial2.write((uint8_t *)&packet->payload.Sensor_payload, sizeof(SensorPacket));
   Serial.printf("send : %zd byte", n);
   Serial2.write(&Footer);
   Serial2.flush();
 
+  /*
   // デバッグ用
   Serial.printf("[Bridge] UART送信 : NodeID=%lu, Temp=%.2f, Humi=%.2f\n",
-                packet->payload.node_id,
-                packet->payload.temp_data,
-                packet->payload.humi_data
+                packet->payload.Sensor_payload.node_id,
+                packet->payload.Sensor_payload.temp_data,
+                packet->payload.Sensor_payload.humi_data
                 );
 
   Serial.printf("[other] : RSSI=%d, SNR=%d\n",
                 packet->rssi,
                 packet->snr);
 
-  uint8_t *p = (uint8_t *)&packet->payload ;
+  uint8_t *p = (uint8_t *)&packet->payload.Sensor_payload ;
   Serial.print("payload hex : ");
   for (size_t i = 0; i < sizeof(SensorPacket); i++){
     Serial.printf("%02X ", p[i]);
   }
-  Serial.println();
+  Serial.println();*/
 
+  curr_seq = packet->payload.seq_no;
+  successCount++;
+  diff_seq = curr_seq - prev_seq;
+
+  if (prev_seq != 0 && diff_seq > 1) {
+    failCount += diff_seq - 1;
+  }
+  prev_seq = curr_seq;
+
+  total = successCount + failCount;
+  if (total > 0) {
+    successRate = (prev_seq == 1) ? 100.0f : (float)successCount / total * 100.0f;
+    Serial.printf("送信成功確率 : %.1f%%\n", successRate);
+  }
+}
+
+void printCSV(const Packet &p) {
+  Serial.printf(
+    "%u,%u,%.2f,%.2f,%d,%d,%lu\n",
+    p.payload.seq_no,
+    p.payload.Sensor_payload.node_id,
+    p.payload.Sensor_payload.temp_data,
+    p.payload.Sensor_payload.humi_data,
+    p.rssi,
+    p.snr,
+    millis()
+  );
 }
 
 static RadioEvents_t RadioEvents;              // LoRa送受信イベントハンドラ登録
@@ -124,6 +167,7 @@ void setup() {
 
   RadioEvents.RxDone = OnRxDone;                                         // OnRxDone関数を受信時コールバック関数として登録
   Radio.Init(&RadioEvents);                                              // 各コールバック関数の呼び出し
+
   // 各LoRaパラメータ設定
   Radio.SetChannel(RF_FREQUENCY);                                        // LoRa周波数設定
   Radio.SetRxConfig(MODEM_LORA, LORA_BANDWIDTH, LORA_SPREADING_FACTOR,
@@ -142,9 +186,11 @@ void loop() {
   }
   Radio.IrqProcess();      // 割り込み処理
 
+
   // デキューしてUART送信
   if (dequeuePacket(&packet)) {
     sendPacketUART(&packet);
+    printCSV(packet);
   }
 }
 
@@ -160,7 +206,7 @@ void loop() {
  */
 void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
   Radio.Sleep();          // LoRaチップスリープ状態
-  
+
   // 受信した各データをエンキュー
   if (!enqueuePacket(payload, size, rssi, snr)) {
     Serial.println("⚠️ Queue full, packet dropped.");
