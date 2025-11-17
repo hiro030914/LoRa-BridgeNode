@@ -103,7 +103,7 @@ void sendPacketUART(Packet *packet) {
   Serial2.write(&Header);
   delay(1000);
   ssize_t n = Serial2.write((uint8_t *)&packet->payload.Sensor_payload, sizeof(SensorPacket));
-  Serial.printf("send : %zd byte", n);
+  // Serial.printf("send : %zd byte", n);
   Serial2.write(&Footer);
   Serial2.flush();
 
@@ -127,6 +127,13 @@ void sendPacketUART(Packet *packet) {
   Serial.println();*/
 
   curr_seq = packet->payload.seq_no;
+  if (curr_seq < prev_seq) {
+    Serial.println("pos change");
+    successCount = 0;
+    failCount = 0;
+    prev_seq = 0;
+    total = 0;
+  }
   successCount++;
   diff_seq = curr_seq - prev_seq;
 
@@ -138,7 +145,7 @@ void sendPacketUART(Packet *packet) {
   total = successCount + failCount;
   if (total > 0) {
     successRate = (prev_seq == 1) ? 100.0f : (float)successCount / total * 100.0f;
-    Serial.printf("送信成功確率 : %.1f%%\n", successRate);
+    Serial.printf("SuccessRate : %.1f%%\n", successRate);
   }
 }
 
