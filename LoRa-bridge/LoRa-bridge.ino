@@ -1,11 +1,10 @@
 #include "LoRaWan_APP.h"
 #include "Arduino.h"
-#include "mbedtls/base64.h"
 
 // LoRaパラメータ設定
 // 固定パラメータのためconstexprによる定義
-constexpr uint32_t RF_FREQUENCY = 925000000;             // LoRa周波数(Hz)
-constexpr int8_t TX_OUTPUT_POWER = 14;                   // 送信出力(dBm)
+constexpr uint32_t RF_FREQUENCY = 920600000;             // LoRa周波数(Hz)
+constexpr int8_t TX_OUTPUT_POWER = 10;                   // 送信出力(dBm)
 constexpr int LORA_BANDWIDTH = 0;                        // 125 kHz
 constexpr int LORA_SPREADING_FACTOR = 7;                 // SF7
 constexpr int LORA_CODINGRATE = 1;                       // CR4/5
@@ -30,6 +29,7 @@ uint32_t failCount = 0;
 uint32_t successCount = 0;
 float successRate = 0.0f;
 uint32_t total = 0;
+uint32_t poscount = 0;
 
 // SensorPacket構造体はセンサノードが送信するデータ型(メタデータを除く)
 // RxPacket構造体はセンサノードが送信するデータ型
@@ -100,11 +100,11 @@ bool dequeuePacket(Packet *packet) {
  *          フッタを送信し送信終了を周知
  */
 void sendPacketUART(Packet *packet) {
-  Serial2.write(&Header);
+  Serial2.write(Header);
   delay(1000);
   ssize_t n = Serial2.write((uint8_t *)&packet->payload.Sensor_payload, sizeof(SensorPacket));
   // Serial.printf("send : %zd byte", n);
-  Serial2.write(&Footer);
+  Serial2.write(Footer);
   Serial2.flush();
 
   /*
@@ -128,7 +128,8 @@ void sendPacketUART(Packet *packet) {
 
   curr_seq = packet->payload.seq_no;
   if (curr_seq < prev_seq) {
-    Serial.println("pos change");
+    poscount++;
+    Serial.printf("pos : %u\n",poscount);
     successCount = 0;
     failCount = 0;
     prev_seq = 0;
@@ -145,20 +146,21 @@ void sendPacketUART(Packet *packet) {
   total = successCount + failCount;
   if (total > 0) {
     successRate = (prev_seq == 1) ? 100.0f : (float)successCount / total * 100.0f;
-    Serial.printf("SuccessRate : %.1f%%\n", successRate);
+    //Serial.printf("SuccessRate : %.1f%%\n", successRate);
   }
 }
 
 void printCSV(const Packet &p) {
   Serial.printf(
-    "%u,%u,%.2f,%.2f,%d,%d,%lu\n",
+    "%u,%u,%.2f,%.2f,%d,%d,%lu,%.1f%%\n",
     p.payload.seq_no,
     p.payload.Sensor_payload.node_id,
     p.payload.Sensor_payload.temp_data,
     p.payload.Sensor_payload.humi_data,
     p.rssi,
     p.snr,
-    millis()
+    millis(),
+    successRate
   );
 }
 
@@ -168,6 +170,7 @@ bool lora_idle = true;                         // LoRa状態フラグ(true:ア�
 
 void setup() {
   Serial.begin(115200);                         // シリアルモニタ初期化(ボーレート)
+  Serial.printf("millis : %lu\n",millis());
   Serial2.begin(115200, SERIAL_8N1, 47, 48);    // UART通信初期化(ボーレート:115200，データフォーマット:SERIAL_8N1, Txピン:47，Rxピン:48)
                                                 // ※データフォーマット: ex)8N1 (データビット幅:8bit，パリティビット:no，ストップビット:1bit)
   Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);       // Heltec固有のボード初期化 ex)LoRaモジュール，OLED etc..
